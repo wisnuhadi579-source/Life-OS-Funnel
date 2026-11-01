@@ -1,0 +1,6 @@
+{
+  "name": "Life OS Funnel",
+  "description": "Personal Business & Life Operating System - Manajemen target finansial Net Profit, North Star, eksekusi harian, evaluasi bulanan, dan AI coaching prompt.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
