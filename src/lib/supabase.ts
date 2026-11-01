@@ -5,23 +5,59 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const ENV_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const ENV_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Primary authoritative configuration: Environment Variables (Vite / Cloudflare Pages)
+const ENV_SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const ENV_SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-// Allow stored configuration if env vars are pending injection in preview
+function isValidUrl(val?: string | null): boolean {
+  if (!val) return false;
+  const str = val.trim();
+  return (
+    str.startsWith('http') &&
+    !str.includes('your-supabase-project') &&
+    !str.includes('placeholder.supabase.co')
+  );
+}
+
+function isValidKey(val?: string | null): boolean {
+  if (!val) return false;
+  const str = val.trim();
+  return (
+    str.length > 20 &&
+    !str.includes('your-anon-key-here') &&
+    !str.includes('placeholder-anon-key')
+  );
+}
+
+/**
+ * Mengambil kredensial Supabase dengan memprioritaskan Environment Variables Vite
+ */
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
+  // 1. Primary Source: Vite Environment Variables (Cloudflare Pages deployment)
+  if (isValidUrl(ENV_SUPABASE_URL) && isValidKey(ENV_SUPABASE_ANON_KEY)) {
+    return { url: ENV_SUPABASE_URL, anonKey: ENV_SUPABASE_ANON_KEY };
+  }
+
+  // 2. Secondary fallback: Local storage (hanya jika ada konfigurasi lokal sebelumnya)
   const customUrl = typeof window !== 'undefined' ? localStorage.getItem('life_os_supabase_url') : null;
   const customKey = typeof window !== 'undefined' ? localStorage.getItem('life_os_supabase_anon_key') : null;
 
-  const url = (ENV_SUPABASE_URL && ENV_SUPABASE_URL !== 'https://your-supabase-project.supabase.co' ? ENV_SUPABASE_URL : '') || customUrl || '';
-  const anonKey = (ENV_SUPABASE_ANON_KEY && ENV_SUPABASE_ANON_KEY !== 'your-anon-key-here' ? ENV_SUPABASE_ANON_KEY : '') || customKey || '';
+  if (isValidUrl(customUrl) && isValidKey(customKey)) {
+    return { url: (customUrl || '').trim(), anonKey: (customKey || '').trim() };
+  }
 
-  return { url: url.trim(), anonKey: anonKey.trim() };
+  return {
+    url: ENV_SUPABASE_URL || '',
+    anonKey: ENV_SUPABASE_ANON_KEY || '',
+  };
 }
 
+/**
+ * Memeriksa apakah konfigurasi Supabase valid dan siap digunakan
+ */
 export function isSupabaseConfigured(): boolean {
   const { url, anonKey } = getSupabaseCredentials();
-  return Boolean(url && anonKey && url.startsWith('http'));
+  return isValidUrl(url) && isValidKey(anonKey);
 }
 
 export function saveCustomSupabaseCredentials(url: string, anonKey: string): void {
@@ -40,12 +76,15 @@ export function clearCustomSupabaseCredentials(): void {
   }
 }
 
-const { url, anonKey } = getSupabaseCredentials();
+const { url: activeUrl, anonKey: activeAnonKey } = getSupabaseCredentials();
 
-// Initialize client with fallback placeholder to prevent crash during initial load before config
+/**
+ * Singleton Supabase Client
+ * Menggunakan persistSession: true agar token sesi login pengguna tersimpan aman
+ */
 export const supabase: SupabaseClient = createClient(
-  url || 'https://placeholder.supabase.co',
-  anonKey || 'placeholder-anon-key',
+  activeUrl || 'https://placeholder.supabase.co',
+  activeAnonKey || 'placeholder-anon-key',
   {
     auth: {
       persistSession: true,
