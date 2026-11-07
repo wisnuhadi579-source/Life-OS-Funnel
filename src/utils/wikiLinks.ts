@@ -63,3 +63,42 @@ export function extractWikiLinks(content: string): ExtractedWikiLink[] {
 
   return uniqueLinks;
 }
+
+/**
+ * Menghasilkan judul catatan unik dengan suffix nomor berurutan jika judul dasar sudah digunakan.
+ * Contoh:
+ * Jika belum ada: "Catatan Baru" -> "Catatan Baru"
+ * Jika sudah ada: "Catatan Baru" -> "Catatan Baru 1"
+ * Jika sudah ada "Catatan Baru 1": -> "Catatan Baru 2"
+ */
+export function generateUniqueTitle(
+  baseTitle: string = 'Catatan Baru',
+  existingTitles: string[] = []
+): string {
+  const cleanBase = (baseTitle || 'Catatan Baru').trim();
+  const normalizedExisting = new Set(
+    existingTitles.map((t) => normalizeNoteTitle(t))
+  );
+
+  // Jika judul dasar belum digunakan sama sekali, gunakan langsung
+  if (!normalizedExisting.has(normalizeNoteTitle(cleanBase))) {
+    return cleanBase;
+  }
+
+  // Cek apakah baseTitle sudah berakhiran angka (contoh: "Catatan Baru 2")
+  const match = cleanBase.match(/^(.*?)(?:\s+(\d+))$/);
+  let prefix = cleanBase;
+  let startNum = 1;
+
+  if (match) {
+    prefix = match[1].trim();
+    startNum = parseInt(match[2], 10) + 1;
+  }
+
+  let counter = startNum;
+  while (normalizedExisting.has(normalizeNoteTitle(`${prefix} ${counter}`))) {
+    counter++;
+  }
+
+  return `${prefix} ${counter}`;
+}

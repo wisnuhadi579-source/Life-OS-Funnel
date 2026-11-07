@@ -120,12 +120,23 @@ export function useNoteCategories() {
           sort_order: cat.sort_order,
         }));
 
-        const { error: seedErr } = await supabase
+        // Cek kategori yang sudah ada di database sebelum insert agar aman dari constraint unik
+        const { data: existingRows } = await supabase
           .from('note_categories')
-          .insert(payload);
+          .select('name')
+          .eq('user_id', user.id);
 
-        if (seedErr) {
-          console.warn('Seed note_categories notice (continuing):', seedErr.message);
+        const existingNames = new Set((existingRows || []).map((r: any) => r.name.toLowerCase().trim()));
+        const toInsert = payload.filter((c) => !existingNames.has(c.name.toLowerCase().trim()));
+
+        if (toInsert.length > 0) {
+          const { error: seedErr } = await supabase
+            .from('note_categories')
+            .insert(toInsert);
+
+          if (seedErr) {
+            console.warn('Seed note_categories notice (continuing):', seedErr.message);
+          }
         }
         await fetchCategories();
       }

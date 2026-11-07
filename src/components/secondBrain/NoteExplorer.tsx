@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Sparkles,
   Tag,
+  Clock,
 } from 'lucide-react';
 import { Note, NoteCategory, SecondBrainSubView } from '../../types/secondBrain';
 
@@ -28,6 +29,7 @@ interface NoteExplorerProps {
   selectedNoteId: string | null;
   activeSubView: SecondBrainSubView;
   selectedCategoryId: string | 'all';
+  isCreating?: boolean;
   onSelectSubView: (view: SecondBrainSubView) => void;
   onSelectCategory: (catId: string | 'all') => void;
   onSelectNote: (note: Note) => void;
@@ -41,6 +43,7 @@ export const NoteExplorer: React.FC<NoteExplorerProps> = ({
   selectedNoteId,
   activeSubView,
   selectedCategoryId,
+  isCreating = false,
   onSelectSubView,
   onSelectCategory,
   onSelectNote,
@@ -119,11 +122,21 @@ export const NoteExplorer: React.FC<NoteExplorerProps> = ({
             </button>
             <button
               onClick={() => onCreateNewNote(selectedCategoryId !== 'all' ? selectedCategoryId : undefined)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition"
+              disabled={isCreating}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition disabled:opacity-60 disabled:cursor-not-allowed"
               title="Buat Catatan Baru"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Catatan</span>
+              {isCreating ? (
+                <>
+                  <Clock className="w-3.5 h-3.5 animate-spin" />
+                  <span>Membuat...</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Catatan</span>
+                </>
+              )}
             </button>
           </div>
         </div>

@@ -20,6 +20,9 @@ import {
   ArrowRight,
   Menu,
   X,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { useNotes } from '../hooks/useNotes';
 import { useNoteCategories } from '../hooks/useNoteCategories';
@@ -37,6 +40,7 @@ export const SecondBrainPage: React.FC = () => {
     selectedNote,
     selectedNoteId,
     loading: loadingNotes,
+    isCreating,
     saveStatus,
     saveError,
     fetchNotes,
@@ -74,10 +78,52 @@ export const SecondBrainPage: React.FC = () => {
   const [mobileExplorerOpen, setMobileExplorerOpen] = useState(false);
   const [mobileKnowledgeOpen, setMobileKnowledgeOpen] = useState(false);
 
+  // Feedback Notification Banner
+  const [actionNotification, setActionNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+
   // Fetch all links when entering graph view or when notes change
   useEffect(() => {
     fetchAllLinks();
   }, [notes, fetchAllLinks]);
+
+  // Handler terpusat untuk membuat catatan baru dengan feedback visual dan proteksi duplikasi
+  const handleCreateNewNote = async (catId?: string) => {
+    if (isCreating) return;
+
+    // Jika sedang di graph view, alihkan ke view catatan biasa
+    if (activeSubView === 'graph') {
+      setActiveSubView('all');
+    }
+    setLocalGraphNoteId(null);
+    setMobileExplorerOpen(false);
+
+    // Kategori: gunakan yang dioper atau kategori yang sedang dipilih (jika bukan 'all')
+    const targetCategory =
+      catId || (selectedCategoryId !== 'all' ? selectedCategoryId : undefined);
+
+    const res = await createNote({ category_id: targetCategory });
+
+    if (res.success && res.data) {
+      setActionNotification({
+        type: 'success',
+        message: `Catatan "${res.data.title}" berhasil dibuat! Silakan mulai menulis.`,
+      });
+      setTimeout(() => {
+        setActionNotification((prev) => (prev?.message.includes(res.data!.title) ? null : prev));
+      }, 3500);
+    } else {
+      setActionNotification({
+        type: 'error',
+        message: res.error || 'Gagal membuat catatan baru. Silakan coba kembali.',
+      });
+      setTimeout(() => {
+        setActionNotification(null);
+      }, 5000);
+    }
+  };
 
   // Open note by title (from Wiki Links)
   const handleOpenNoteByTitle = async (title: string) => {
@@ -204,11 +250,21 @@ export const SecondBrainPage: React.FC = () => {
 
           {/* New Note Button */}
           <button
-            onClick={() => createNote()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-cyan-500/20 transition"
+            onClick={() => handleCreateNewNote()}
+            disabled={isCreating}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-cyan-500/20 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Catatan Baru</span>
+            {isCreating ? (
+              <>
+                <Clock className="w-3.5 h-3.5 animate-spin" />
+                <span>Membuat...</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Catatan Baru</span>
+              </>
+            )}
           </button>
 
           {/* Knowledge Panel Toggle (Desktop) */}
@@ -238,6 +294,7 @@ export const SecondBrainPage: React.FC = () => {
             selectedNoteId={selectedNoteId}
             activeSubView={activeSubView}
             selectedCategoryId={selectedCategoryId}
+            isCreating={isCreating}
             onSelectSubView={(v) => {
               setActiveSubView(v);
               setLocalGraphNoteId(null);
@@ -253,11 +310,7 @@ export const SecondBrainPage: React.FC = () => {
                 setActiveSubView('all');
               }
             }}
-            onCreateNewNote={(catId) => {
-              createNote({ category_id: catId });
-              setLocalGraphNoteId(null);
-              if (activeSubView === 'graph') setActiveSubView('all');
-            }}
+            onCreateNewNote={handleCreateNewNote}
             onOpenCategoryManager={() => setCategoryModalOpen(true)}
           />
         </div>
@@ -280,6 +333,7 @@ export const SecondBrainPage: React.FC = () => {
                 selectedNoteId={selectedNoteId}
                 activeSubView={activeSubView}
                 selectedCategoryId={selectedCategoryId}
+                isCreating={isCreating}
                 onSelectSubView={(v) => {
                   setActiveSubView(v);
                   setLocalGraphNoteId(null);
@@ -296,12 +350,7 @@ export const SecondBrainPage: React.FC = () => {
                   setMobileExplorerOpen(false);
                   if (activeSubView === 'graph') setActiveSubView('all');
                 }}
-                onCreateNewNote={(catId) => {
-                  createNote({ category_id: catId });
-                  setLocalGraphNoteId(null);
-                  setMobileExplorerOpen(false);
-                  if (activeSubView === 'graph') setActiveSubView('all');
-                }}
+                onCreateNewNote={handleCreateNewNote}
                 onOpenCategoryManager={() => {
                   setCategoryModalOpen(true);
                   setMobileExplorerOpen(false);
@@ -406,11 +455,21 @@ export const SecondBrainPage: React.FC = () => {
 
               <div className="flex items-center gap-3 pt-2">
                 <button
-                  onClick={() => createNote()}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-500/20 transition transform hover:-translate-y-0.5"
+                  onClick={() => handleCreateNewNote()}
+                  disabled={isCreating}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-500/20 transition transform hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Buat Catatan Pertama</span>
+                  {isCreating ? (
+                    <>
+                      <Clock className="w-4 h-4 animate-spin" />
+                      <span>Membuat Catatan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>Buat Catatan Pertama</span>
+                    </>
+                  )}
                 </button>
                 <button
                   onClick={() => setActiveSubView('graph')}
@@ -452,6 +511,30 @@ export const SecondBrainPage: React.FC = () => {
         onUpdateCategory={updateCategory}
         onDeleteCategory={deleteCategory}
       />
+
+      {/* Toast Notification Banner */}
+      {actionNotification && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border text-xs font-medium shadow-2xl backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-3 ${
+            actionNotification.type === 'error'
+              ? 'bg-rose-950/90 border-rose-500/50 text-rose-200 shadow-rose-950/50'
+              : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200 shadow-emerald-950/50'
+          }`}
+        >
+          {actionNotification.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          )}
+          <span>{actionNotification.message}</span>
+          <button
+            onClick={() => setActionNotification(null)}
+            className="ml-2 text-slate-400 hover:text-white transition"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

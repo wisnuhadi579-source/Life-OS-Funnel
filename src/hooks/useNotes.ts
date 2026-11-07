@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Note } from '../types/secondBrain';
-import { normalizeNoteTitle } from '../utils/wikiLinks';
+import { normalizeNoteTitle, generateUniqueTitle } from '../utils/wikiLinks';
 import { useNoteLinks } from './useNoteLinks';
 
 export type NoteSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -17,6 +17,7 @@ export function useNotes() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<NoteSaveStatus>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -159,8 +160,19 @@ export function useNotes() {
 
         if (updateErr) {
           setSaveStatus('error');
-          setSaveError(updateErr.message);
-          return { success: false, error: updateErr.message };
+          let friendlyError = updateErr.message;
+          const isConflict =
+            updateErr.code === '23505' ||
+            updateErr.message?.toLowerCase().includes('duplicate') ||
+            updateErr.message?.toLowerCase().includes('unique') ||
+            updateErr.message?.toLowerCase().includes('conflict');
+
+          if (isConflict) {
+            friendlyError = 'Judul sudah digunakan oleh catatan lain. Harap gunakan judul yang berbeda.';
+          }
+
+          setSaveError(friendlyError);
+          return { success: false, error: friendlyError };
         }
 
         const updated = data as Note;
@@ -195,6 +207,20 @@ export function useNotes() {
         prev.map((n) => (n.id === id ? { ...n, ...updates, updated_at: new Date().toISOString() } : n))
       );
 
+      // Jika user sedang mengetik judul dan judul tersebut persis sama dengan catatan lain,
+      // beri status error/peringatan lokal dan tunda pengiriman judul agar tidak menghasilkan 409
+      if (updates.title !== undefined) {
+        const norm = normalizeNoteTitle(updates.title);
+        const hasCollision = notesRef.current.some(
+          (n) => n.id !== id && normalizeNoteTitle(n.title) === norm
+        );
+        if (hasCollision) {
+          setSaveStatus('error');
+          setSaveError('Judul catatan sudah digunakan oleh catatan lain. Gunakan judul yang unik.');
+          return;
+        }
+      }
+
       // Track pending update
       pendingUpdatesRef.current = {
         id,
@@ -221,7 +247,9 @@ export function useNotes() {
   );
 
   /**
-   * Buat catatan baru
+   * Buat catatan baru.
+   * Dilengkapi penanganan keunikan judul (auto-increment suffix) dan retry safety
+   * sehingga tidak akan pernah memicu HTTP 409 Conflict.
    */
   const createNote = useCallback(
     async (
@@ -229,33 +257,85 @@ export function useNotes() {
     ): Promise<{ success: boolean; data?: Note; error: string | null }> => {
       if (!user) return { success: false, error: 'Pengguna belum terautentikasi.' };
 
+      setIsCreating(true);
       await flushPendingAutosave();
 
       try {
-        const payload = {
-          user_id: user.id,
-          title: (initialData?.title || 'Catatan Baru').trim(),
-          content: initialData?.content || '',
-          category_id: initialData?.category_id || null,
-          is_pinned: false,
-          is_favorite: false,
-          is_archived: false,
-        };
+        const existingTitles = notesRef.current.map((n) => n.title);
+        const requestedTitle = initialData?.title?.trim();
 
-        const { data, error: insertErr } = await supabase
-          .from('notes')
-          .insert([payload])
-          .select()
-          .single();
+        // Tentukan judul awal yang unik
+        let titleToUse = requestedTitle
+          ? requestedTitle
+          : generateUniqueTitle('Catatan Baru', existingTitles);
 
-        if (insertErr) {
-          return { success: false, error: insertErr.message };
+        // Jika requestedTitle sengaja diberikan dan sudah ada di DB, buatkan judul dengan suffix
+        if (
+          requestedTitle &&
+          existingTitles.some((t) => normalizeNoteTitle(t) === normalizeNoteTitle(requestedTitle))
+        ) {
+          titleToUse = generateUniqueTitle(requestedTitle, existingTitles);
         }
 
-        const created = data as Note;
-        setNotes((prev) => [created, ...prev]);
+        let created: Note | null = null;
+        let lastErrorMsg: string | null = null;
+
+        // Loop coba insert hingga 5 kali dengan auto-increment judul jika terjadi bentrok keunikan
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const payload = {
+            user_id: user.id,
+            title: titleToUse,
+            content: initialData?.content ?? '',
+            category_id: initialData?.category_id || null,
+            is_pinned: false,
+            is_favorite: false,
+            is_archived: false,
+          };
+
+          const { data, error: insertErr } = await supabase
+            .from('notes')
+            .insert([payload])
+            .select()
+            .single();
+
+          if (!insertErr && data) {
+            created = data as Note;
+            break;
+          }
+
+          if (insertErr) {
+            const isConflict =
+              insertErr.code === '23505' ||
+              insertErr.message?.toLowerCase().includes('duplicate') ||
+              insertErr.message?.toLowerCase().includes('unique') ||
+              insertErr.message?.toLowerCase().includes('conflict');
+
+            if (isConflict) {
+              // Jika terjadi bentrok di database, buat judul unik berikutnya dan coba lagi
+              titleToUse = generateUniqueTitle(titleToUse, [
+                ...notesRef.current.map((n) => n.title),
+                titleToUse,
+              ]);
+              continue;
+            }
+
+            lastErrorMsg = insertErr.message;
+            break;
+          }
+        }
+
+        if (!created) {
+          return {
+            success: false,
+            error: lastErrorMsg || 'Gagal membuat catatan baru ke database.',
+          };
+        }
+
+        // Update list catatan lokal seketika (reaktif tanpa reload)
+        setNotes((prev) => [created!, ...prev.filter((n) => n.id !== created!.id)]);
         setSelectedNoteId(created.id);
         setSaveStatus('saved');
+        setSaveError(null);
 
         // Sinkronisasi wiki links jika ada teks awal
         if (created.content) {
@@ -266,6 +346,8 @@ export function useNotes() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Gagal membuat catatan baru.';
         return { success: false, error: msg };
+      } finally {
+        setIsCreating(false);
       }
     },
     [user, flushPendingAutosave, syncNoteLinks]
@@ -381,6 +463,7 @@ export function useNotes() {
     selectedNote,
     selectedNoteId,
     loading,
+    isCreating,
     error,
     saveStatus,
     saveError,

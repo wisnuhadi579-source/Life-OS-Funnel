@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Bold,
   Italic,
@@ -37,6 +37,7 @@ import {
 import { Note, NoteCategory } from '../../types/secondBrain';
 import { NoteSaveStatus } from '../../hooks/useNotes';
 import { NotePreview } from './NotePreview';
+import { normalizeNoteTitle } from '../../utils/wikiLinks';
 
 interface NoteEditorProps {
   note: Note;
@@ -83,12 +84,32 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Periksa apakah judul saat ini menduplikasi catatan lain (case-insensitive)
+  const isDuplicateTitle = useMemo(() => {
+    const norm = normalizeNoteTitle(title);
+    if (!norm) return false;
+    return allNotes.some(
+      (n) => n.id !== note.id && normalizeNoteTitle(n.title) === norm
+    );
+  }, [title, allNotes, note.id]);
 
   // Sync internal state when active note changes
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
     setAutocompleteOpen(false);
+
+    // Jika catatan baru (judul bawaan "Catatan Baru..." dan belum ada konten), sorot judul agar siap diedit
+    if (note.title.toLowerCase().startsWith('catatan baru') && !note.content) {
+      setTimeout(() => {
+        if (titleInputRef.current) {
+          titleInputRef.current.focus();
+          titleInputRef.current.select();
+        }
+      }, 50);
+    }
   }, [note.id]);
 
   const handleTitleChange = (newTitle: string) => {
@@ -339,12 +360,21 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       {/* 2. Note Title Input */}
       <div className="px-6 pt-4 pb-2 border-b border-[#15385F]/60">
         <input
+          ref={titleInputRef}
           type="text"
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Judul Catatan..."
           className="w-full bg-transparent text-xl sm:text-2xl font-black text-white focus:outline-none tracking-tight placeholder-slate-600 font-sans"
         />
+        {isDuplicateTitle && (
+          <div className="flex items-center gap-1.5 text-xs text-amber-400 mt-1.5 font-medium animate-in fade-in">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Judul ini sudah digunakan oleh catatan lain. Gunakan judul yang unik agar tautan [[Wiki Links]] tepat sasaran.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 3. Markdown Formatting Toolbar */}
